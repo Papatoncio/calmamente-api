@@ -94,8 +94,7 @@ def insertrespuesta():
         # Convertir el Json a un dataframe
         df = pd.DataFrame([body])
 
-        y = df['Nivel de Ansiedad']
-        X = df.drop(columns=['Nivel de Ansiedad'])
+        X = df
 
         # Imprimir las columnas de X que se usaron para ajustar el modelo
         print("Columnas usadas para entrenar el modelo:", modeloglobal.feature_names_in_)
@@ -111,12 +110,11 @@ def insertrespuesta():
         if modeloglobal is None:
             return jsonify({"error": "El modelo no ha sido cargado."}), 400
 
-        predicciones = modeloglobal.predict(X)
-        score = metrics.adjusted_rand_score(y, predicciones)
+        prediccion = modeloglobal.predict(X)[0]
 
         # Retorna la predicción con los datos insertados
         return jsonify({ "mensaje" : "Predicción realizada correctamante",
-                        "score" : score }), 200
+                        "prediccion" : str(prediccion) }), 200
     except Exception as e:
         # Retorna el error
         return jsonify({ "error" : str(e) }), 400
@@ -146,14 +144,18 @@ def insertmodelo():
         parametros = body.get("parametros")
         if parametros is None or parametros == "":
             return jsonify({"error": "No se proporcionaron parámetros"}), 400
+        
+        nombre = body.get("nombre")
+        if nombre is None or nombre == "":
+            return jsonify({"error": "No se especifico el nombre para el modelo"}), 400
                 
         dataset = body.get("dataset")
         if dataset is None or dataset == "":
             return jsonify({"error": "No se proporciono un set de datos"}), 400
         
         # Transformar texto a formato csv
-        csv = StringIO(dataset)
-        df = pd.read_csv(csv)
+        file_path = 'C:/Users/juanp/Downloads/Datos_Niveles_Ansiedad.csv'
+        df = pd.read_csv(file_path)
 
         tipo = body.get("tipo")
         if tipo is None or tipo == "":
@@ -182,6 +184,7 @@ def insertmodelo():
 
         data = {
             "tipo": tipo,
+            "nombre" : nombre,
             "parametros": parametros,
             "precision": precision,
             "modelo": modelo_base64  # Guardar la cadena Base64
@@ -255,9 +258,11 @@ def updatemodelo():
         # Establecer atributo principal de modelo como true
         supabase.table("modelos").update({ "principal" : True }).eq("id", idmodelo).execute()
 
+        cargarmodelo()
+
         return jsonify({"mensaje": "Modelo actualizado correctamente" }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 400    
+        return jsonify({"error": str(e)}), 400
 
 # * Ejecución del servidor (Siempre debe ir al final de la configuración)
 if __name__ == "__main__":
