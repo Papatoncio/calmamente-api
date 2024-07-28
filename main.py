@@ -3,6 +3,7 @@ import pandas as pd
 import pickle
 import base64
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from supabase import create_client, Client
 from supabase.client import ClientOptions
 from dotenv import load_dotenv
@@ -12,6 +13,9 @@ from io import StringIO
 
 # * Instanciación de la app
 app = Flask(__name__)
+
+# * Agrega soporte CORS para todos los endpoints, todos los origenes
+CORS(app)
 
 # ! Variables de entorno
 load_dotenv()
