@@ -645,5 +645,6 @@ def generatabla(valor, bgcolor1, bgcolor2):
 # * Ejecución del servidor (Siempre debe ir al final de la configuración)
 if __name__ == "__main__":
     with app.app_context():
+        # Cargar modelo principal si hay
         cargarmodelo()
-    app.run(DEBUG, PORT)
+    app.run(debug=DEBUG, port=PORT)
