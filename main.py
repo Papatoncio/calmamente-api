@@ -2,14 +2,29 @@ import os
 import pandas as pd
 import pickle
 import base64
-from flask import Flask, jsonify, request
+import io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
+import ast
+from flask import Flask, jsonify, request, render_template, make_response
 from flask_cors import CORS
 from supabase import create_client, Client
 from supabase.client import ClientOptions
 from dotenv import load_dotenv
 from sklearn.cluster import KMeans
-from sklearn import metrics, svm
-from io import StringIO
+from sklearn.mixture import GaussianMixture
+from sklearn import metrics
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
+from sklearn.decomposition import PCA
+from scipy.cluster.hierarchy import linkage, dendrogram
+from sklearn.manifold import TSNE
+from PIL import Image as imgb64
 
 # * Instanciación de la app
 app = Flask(__name__)
@@ -33,6 +48,89 @@ supabase: Client = create_client(url, key,
     schema="public",
   ))
 
+# * Index
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+# ! Reporte PDF
+@app.route('/reporte')
+def generatepdf():
+    try:
+        body = {"":""}
+
+        # Si el body esta vació retornar todas las columnas
+        if body is None or body == {}:
+            return jsonify({"error": "No se encontraron valores para realizar la operación"}), 400
+
+        idmodelo = 50
+
+        # Verificar si se proporciono idmodelo
+        if idmodelo is None or idmodelo == "":
+            return jsonify({"error": "No se definió un modelo para el reporte."}), 400
+
+        # Datos para el reporte
+        datos = supabase.table("datos").select("*").order(column="tipo", desc=False).execute().data
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+
+        styles = getSampleStyleSheet()
+        story = []
+
+        for dato in datos:
+            # Titulo de cada elemento
+            nombre = dato.get("nombre")
+            story.append(Paragraph(f"<b>{nombre}</b>", styles["Title"]))
+            story.append(Spacer(1, 6))
+
+            tipo = dato.get("tipo")
+            valor = dato.get("valor")
+
+            if tipo == "1":
+                # Convertir la cadena a una lista
+                lista = ast.literal_eval(valor)
+                table_data = []
+                for i in range(0, len(lista), 2): # Manejo de arreglos de texto
+                    row = lista[i:i+2]
+                    if len(row) < 2:
+                        row.append('')  # Añadir una celda vacía si la fila tiene menos de 2 elementos
+                    table_data.append(row)
+
+                # Crear la tabla
+                table_data_paragraphs = [[Paragraph("- " + cell, styles['BodyText']) for cell in row] for row in table_data]
+
+                table = Table(table_data_paragraphs, colWidths='*')
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.azure),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.azure),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+
+                story.append(table)
+                story.append(Spacer(1, 12))
+            elif tipo == "2":
+                img_data = base64.b64decode(valor)
+                img_buffer = BytesIO(img_data)
+                img = Image(img_buffer, 400, 300)
+                story.append(img)
+
+        doc.build(story)
+        buffer.seek(0)
+
+        response = make_response(buffer.read())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = 'inline; filename=output.pdf'
+
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 # ! Peticiones Respuestas
 # * Obtener todas las respuestas
 @app.route('/respuestas')
@@ -47,7 +145,7 @@ def getallrespuestas():
         return jsonify({ "error" : str(e) }), 400
 
 # * Obtener datos para exportar a excel
-@app.route('/respuestas/csv')
+@app.route('/respuestas/csv', methods=["POST"])
 def exportcsv():
     try:
         query = supabase.table("respuestas")
@@ -98,17 +196,7 @@ def insertrespuesta():
         # Convertir el Json a un dataframe
         df = pd.DataFrame([body])
 
-        X = df
-
-        # Imprimir las columnas de X que se usaron para ajustar el modelo
-        print("Columnas usadas para entrenar el modelo:", modeloglobal.feature_names_in_)
-
-        # Imprimir las columnas del nuevo DataFrame
-        print("Columnas en el DataFrame de entrada:", X.columns.tolist())
-
-        # Verificar si hay coincidencias
-        if set(X.columns) != set(modeloglobal.feature_names_in_):
-            print("Columnas que no coinciden:", set(X.columns).symmetric_difference(set(modeloglobal.feature_names_in_)))
+        X = df[modeloglobal.feature_names_in_]
 
         # Verificar si modeloglobal está inicializado
         if modeloglobal is None:
@@ -128,7 +216,7 @@ def insertrespuesta():
 @app.route('/modelos')
 def getallmodelos():
     try:
-        query = supabase.table("modelos").select("*")
+        query = supabase.table("modelos").select("id, created_at, tipo, parametros, precision, principal")
 
         # Retorna los resultados de la consulta
         return jsonify({ "mensaje" : "Datos consultados correctamente", "rows" : str(query.execute().data) }), 200
@@ -167,8 +255,8 @@ def insertmodelo():
         
         if tipo == "kmeans":
             modelo = KMeans(**parametros)
-        elif tipo == "svc":
-            modelo = svm.SVC(**parametros)
+        elif tipo == "gaus":
+            modelo = GaussianMixture(**parametros)
         else:
             return jsonify({"error": "Tipo de algoritmo no soportado"}), 400
 
@@ -194,7 +282,24 @@ def insertmodelo():
             "modelo": modelo_base64  # Guardar la cadena Base64
         }
 
-        supabase.table("modelos").insert(data).execute()
+        idmodelo = supabase.table("modelos").insert(data).execute().data[0].get("id")
+
+        if tipo == "kmeans":
+            clusterskmeans(idmodelo, modelo, X)
+            metodocodokmeans(idmodelo, X)
+        elif tipo == "gaus":
+            # sdasd
+            print("gaus")
+        else:
+            return jsonify({"error": "Tipo de algoritmo no soportado"}), 400
+
+        columnas = list(X.columns)
+
+        if columnas is None or columnas == []:
+            return jsonify({"error": "No se encontraron columnas"}), 400
+
+        # # Guardar columnas del dataset
+        columnasdataset(idmodelo, columnas)
 
         return jsonify({ "mensaje": "Modelo guardado correctamente" }), 200
     except Exception as e:
@@ -265,6 +370,107 @@ def updatemodelo():
         cargarmodelo()
 
         return jsonify({"mensaje": "Modelo actualizado correctamente" }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# * Actualizar Modelo
+@app.route('/modelos/cargado')
+def checkmodelo():
+    try:
+        print(modeloglobal.__getstate__())
+        return jsonify({"mensaje": "Modelo actualizado correctamente", "modelo" : {
+            "clase" : str(modeloglobal.__class__)
+        } }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# * Guardar datos para reporte pdf
+def columnasdataset(idmodelo, columnas):
+    try:
+        guardardatosreporte("Columnas Dataset", columnas, "1", idmodelo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# * Gráficas Kmeans
+def metodocodokmeans(idmodelo, data):
+    try:
+        # Gráfico de Elbow
+        distortions = []
+        K = range(1, 11)
+        for k in K:
+            kmeans = KMeans(n_clusters=k)
+            kmeans.fit(data)
+            distortions.append(kmeans.inertia_)
+            
+        plt.figure(figsize=(8, 6))
+        plt.plot(K, distortions, 'bo-')
+        plt.xlabel('Número de clusters (K)')
+        plt.ylabel('Inercia')
+        plt.title('Gráfico de Elbow')
+
+        guardardatosreporte("Método del Codo Kmeans", plt, "2", idmodelo)
+        plt.close("all")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+def clusterskmeans(idmodelo, modelo, data):
+    try:
+        print("---")
+        # Centroides de los clusters
+        centroids = modelo.cluster_centers_
+        print("---")
+        # Etiquetas de los clusters
+        labels = modelo.labels_
+        print("---")
+        # Gráfico de dispersión con clusters
+        plt.figure(figsize=(12, 8))
+        scatter = plt.scatter(data[:, 0], data[:, 1], c=labels, s=50, cmap='viridis', alpha=0.7)
+        plt.scatter(centroids[:, 0], centroids[:, 1], s=300, c='red', marker='X', label='Centroides')
+        plt.legend()
+        plt.title('Gráfico de Dispersión con Clusters')
+        plt.colorbar(scatter, label='Cluster')
+        plt.show()
+        print("---")
+        guardardatosreporte("Clusters Kmeans", plt, "2", idmodelo)
+        plt.close("all")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# ! Gráficas gauss
+
+def guardardatosreporte(nombre, dato, tipo, idmodelo):
+    try:        
+        if nombre is None or nombre == "":
+            return jsonify({"error": "No se establecio un nombre"}), 400
+        
+        if dato is None or dato == "":
+            return jsonify({"error": "No se establecio un dato"}), 400
+        
+        if tipo is None or tipo == "":
+            return jsonify({"error": "No se establecio un tipo"}), 400
+        
+        if idmodelo is None or idmodelo == "":
+            return jsonify({"error": "No se establecio un idmodelo"}), 400
+
+        if tipo == "1": # Gráficas
+            valor = str(dato)
+        elif tipo == "2": # Texto
+            buffer = BytesIO()
+            dato.savefig(buffer, format='png')
+            buffer.seek(0)
+            valor = base64.b64encode(buffer.read()).decode('utf-8')
+            buffer.close()            
+
+        data = {
+            "nombre" : nombre,
+            "valor" : valor,
+            "id_modelo" : idmodelo,
+            "tipo" : tipo
+        }
+
+        supabase.table("datos").insert(data).execute()
+
+        return jsonify({"mensaje": "Datos guardados correctamente" }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
