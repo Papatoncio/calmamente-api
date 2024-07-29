@@ -41,6 +41,8 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+DEBUG = os.getenv('DEBUG')
+PORT = os.getenv('PORT')
 
 # * Conexión a base de datos en supabase
 url: str = SUPABASE_URL
@@ -644,4 +646,4 @@ def generatabla(valor, bgcolor1, bgcolor2):
 if __name__ == "__main__":
     with app.app_context():
         cargarmodelo()
-    app.run(debug=True)
+    app.run(DEBUG, PORT)
