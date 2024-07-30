@@ -249,7 +249,7 @@ def insertmodelo():
             return jsonify({"error": "No se proporciono un set de datos"}), 400
         
         # Transformar texto a formato csv
-        file_path = 'C:/Users/juanp/Downloads/Datos_Niveles_Ansiedad.csv'
+        file_path = 'C:/Users/juanp/Downloads/dataset_from_db_xd.csv'
         df = pd.read_csv(file_path)
 
         tipo = body.get("tipo")
@@ -330,7 +330,7 @@ def cargarmodelo():
         return jsonify({"error": str(e)}), 400
 
 # * Eliminar Modelo
-@app.route('/modelos', methods=["POST"])
+@app.route('/modelos/eliminar', methods=["POST"])
 def deletemodelo():
     try:
         body = request.get_json()
