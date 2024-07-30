@@ -76,7 +76,7 @@ def generatepdf():
             return jsonify({"error": "No se definió un modelo para el reporte."}), 400
 
         # Datos para el reporte
-        datos = supabase.table("datos").select("*").order(column="tipo", desc=False).execute().data
+        datos = supabase.table("datos").select("*").eq("id_modelo", idmodelo).order(column="tipo", desc=False).execute().data
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -194,15 +194,18 @@ def insertrespuesta():
 
         X = df[modeloglobal.feature_names_in_]
 
+        len_x = X.columns.__len__()
+        len_res = pd.DataFrame([supabase.table("respuestas").select("*").eq("id", 1).execute().data[0]]).drop(columns=["id", "Nivel de Ansiedad"]).columns.__len__()
+
         # Verificar si modeloglobal está inicializado
         if modeloglobal is None:
             return jsonify({"error": "El modelo no ha sido cargado."}), 400
 
         prediccion = str(modeloglobal.predict(X)[0])
 
-        body["Nivel de Ansiedad"] = prediccion
-
-        supabase.table("respuestas").insert(body).execute()
+        if (len_x == len_res):
+            body["Nivel de Ansiedad"] = prediccion
+            supabase.table("respuestas").insert(body).execute()
 
         # Retorna la predicción con los datos insertados
         return jsonify({ "mensaje" : "Predicción realizada correctamante",
@@ -216,10 +219,10 @@ def insertrespuesta():
 @app.route('/modelos')
 def getallmodelos():
     try:
-        query = supabase.table("modelos").select("id, created_at, tipo, parametros, precision, principal")
+        query = supabase.table("modelos").select("id, created_at, nombre, tipo, parametros, principal")
 
         # Retorna los resultados de la consulta
-        return jsonify({ "mensaje" : "Datos consultados correctamente", "rows" : str(query.execute().data) }), 200
+        return jsonify({ "mensaje" : "Datos consultados correctamente", "rows" : query.execute().data }), 200
     except Exception as e:
         # Retorna el error
         return jsonify({ "error" : str(e) }), 400
@@ -263,12 +266,9 @@ def insertmodelo():
         if modelo is None:
             return jsonify({"error": "Ocurrió un error al crear el modelo"}), 400
         
-        y = df['Nivel de Ansiedad']
-        X = df.drop(columns=['Nivel de Ansiedad'])
+        X = df
 
         modelo.fit(X)
-        predicciones = modelo.predict(X)
-        precision = metrics.adjusted_rand_score(y, predicciones)
 
         # Serializar el modelo y convertirlo a Base64
         modelo_bytes = pickle.dumps(modelo)
@@ -278,18 +278,17 @@ def insertmodelo():
             "tipo": tipo,
             "nombre" : nombre,
             "parametros": parametros,
-            "precision": precision,
             "modelo": modelo_base64  # Guardar la cadena Base64
         }
 
         idmodelo = supabase.table("modelos").insert(data).execute().data[0].get("id")
 
         if tipo == "kmeans":
-            clusterskmeans(idmodelo, X)
+            clusterskmeans(idmodelo, X, parametros)
             metodocodokmeans(idmodelo, X)
         elif tipo == "gauss":
-            metodocodogaussianmixture(idmodelo, X)
-            dsads(idmodelo, X)
+            clustersgaussianmixture(idmodelo, X, parametros)
+            metodocodogaussianmixture(idmodelo, X)            
         else:
             return jsonify({"error": "Tipo de algoritmo no soportado"}), 400
 
@@ -331,7 +330,7 @@ def cargarmodelo():
         return jsonify({"error": str(e)}), 400
 
 # * Eliminar Modelo
-@app.route('/modelos', methods=["DELETE"])
+@app.route('/modelos', methods=["POST"])
 def deletemodelo():
     try:
         body = request.get_json()
@@ -376,11 +375,11 @@ def updatemodelo():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
-# * Actualizar Modelo
+# * Revisar Modelo
 @app.route('/modelos/cargado')
 def checkmodelo():
     try:
-        return jsonify({"mensaje": "Modelo actualizado correctamente", "modelo" : {
+        return jsonify({"mensaje": "Modelo consultado correctamente", "modelo" : {
             "clase" : str(modeloglobal.__class__)
         } }), 200
     except Exception as e:
@@ -414,6 +413,35 @@ def descargarmodelo():
         memory_file.seek(0)
 
         return send_file(memory_file, download_name=nombre, as_attachment=True), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# * Obtener columnas modelo
+@app.route('/modelos/columnas', methods=["POST"])
+def columnasmodelo():
+    try:
+        body = request.get_json()
+
+        if body is None or body == {}:
+            return jsonify({"error": "No se encontraron valores para realizar la operación"}), 400
+        
+        idmodelo = body.get("id")
+
+        if idmodelo is None or idmodelo == "":
+            return jsonify({"error": "No se encontro el modelo"}), 400
+
+        # Establecer atributo principal de resto de modelos como false
+        columnas = supabase.table("datos").select("valor").eq("id_modelo", idmodelo).eq("nombre", "Columnas Dataset").execute().data[0].get("valor")
+
+        # Establecer atributo principal de resto de modelos como false
+        supabase.table("modelos").update({ "principal" : False }).neq("id", idmodelo).execute()
+
+        # Establecer atributo principal de modelo como true
+        supabase.table("modelos").update({ "principal" : True }).eq("id", idmodelo).execute()
+
+        cargarmodelo()
+
+        return jsonify({"mensaje": "Modelo consultado correctamente", "columnas" : columnas }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
@@ -486,7 +514,7 @@ def metodocodokmeans(idmodelo, data):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-def clusterskmeans(idmodelo, x):
+def clusterskmeans(idmodelo, x, parametros):
     try:
         # Escalado de datos
         escalador = MinMaxScaler().fit(x)
@@ -497,7 +525,7 @@ def clusterskmeans(idmodelo, x):
         pca_ansiedad = pca.fit_transform(ansiedad)
 
         # Aplicar K-means
-        modelo = KMeans(n_clusters=4, n_init=10, max_iter=300).fit(pca_ansiedad)
+        modelo = KMeans(**parametros).fit(pca_ansiedad)
 
         # Grafica los resultados
         ansiedad_pca = pd.DataFrame(pca_ansiedad, columns=['pca_one', 'pca_two'])
@@ -546,7 +574,7 @@ def metodocodogaussianmixture(idmodelo, data):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-def dsads(idmodelo, x):
+def clustersgaussianmixture(idmodelo, x, parametros):
     # Escalado de datos
     escalador = MinMaxScaler().fit(x)
     ansiedad = pd.DataFrame(escalador.transform(x), columns=x.columns)
@@ -557,7 +585,7 @@ def dsads(idmodelo, x):
     print(pca_ansiedad.shape)
 
     # Aplicar K-means
-    modelo = GaussianMixture(n_components=4, n_init=10, max_iter=300).fit(pca_ansiedad)
+    modelo = GaussianMixture(**parametros).fit(pca_ansiedad)
 
     # Medias de las gaussianas
     means = modelo.means_
