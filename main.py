@@ -248,9 +248,29 @@ def insertmodelo():
         if dataset is None or dataset == "":
             return jsonify({"error": "No se proporciono un set de datos"}), 400
         
-        # Transformar texto a formato csv
-        file_path = 'C:/Users/juanp/Downloads/dataset_from_db_xd.csv'
-        df = pd.read_csv(file_path)
+        # Aqui quiero convertir el contenido de Base64 y luego pasarlo a pd
+         # Decodificar el contenido en base64
+        try:
+            file_content = base64.b64decode(dataset['fileContent'])
+        except KeyError:
+            return jsonify({"error": "El set de datos no contiene 'fileContent'"}), 400
+        except base64.binascii.Error:
+            return jsonify({"error": "Contenido de base64 no válido"}), 400
+        
+        file_name = dataset.get('fileName', 'default.csv')
+
+        # Guardar el contenido en un archivo CSV
+        with open(file_name, 'wb') as file:
+            file.write(file_content)
+
+        # Leer el archivo CSV con pandas
+        try:
+            df = pd.read_csv(file_name)
+        except Exception as e:
+            return jsonify({"error": f"No se pudo leer el archivo CSV: {e}"}), 400
+        finally:
+            # Eliminar el archivo temporal después de leerlo
+            os.remove(file_name)
 
         tipo = body.get("tipo")
         if tipo is None or tipo == "":
