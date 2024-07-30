@@ -219,7 +219,7 @@ def insertrespuesta():
 @app.route('/modelos')
 def getallmodelos():
     try:
-        query = supabase.table("modelos").select("id, created_at, nombre, tipo, parametros, principal")
+        query = supabase.table("modelos").select("id, created_at, nombre, tipo, parametros, principal").order(column="nombre", desc=False).order(column="tipo", desc=False)
 
         # Retorna los resultados de la consulta
         return jsonify({ "mensaje" : "Datos consultados correctamente", "rows" : query.execute().data }), 200
