@@ -1,3 +1,4 @@
+from collections import Counter
 import os
 import pandas as pd
 import pickle
@@ -324,6 +325,9 @@ def insertmodelo():
         # Guardar puntuaciones metricas de evaluación
         datospuntuaciones(idmodelo, modelo, X, tipo)
 
+        # Guardar las predicciones realizadas por el algoritmo
+        totalporcluster(idmodelo, modelo.predict(X))
+
         return jsonify({ "mensaje": "Modelo guardado correctamente" }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -452,7 +456,7 @@ def columnasmodelo():
             return jsonify({"error": "No se encontro el modelo"}), 400
 
         # Establecer atributo principal de resto de modelos como false
-        columnas = supabase.table("datos").select("valor").eq("id_modelo", idmodelo).eq("nombre", "Columnas Dataset").execute().data[0].get("valor")
+        columnas = eval(supabase.table("datos").select("valor").eq("id_modelo", idmodelo).eq("nombre", "Columnas Dataset").execute().data[0].get("valor"))
 
         # Establecer atributo principal de resto de modelos como false
         supabase.table("modelos").update({ "principal" : False }).neq("id", idmodelo).execute()
@@ -534,6 +538,22 @@ def datospuntuaciones(idmodelo, modelo, x, tipo):
         datos.append(ch_score)
 
         guardardatosreporte("Criterios de Evaluación", datos, "1", idmodelo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+def totalporcluster(idmodelo, predicciones):
+    try:
+        agrupado = Counter(predicciones)
+        series = []
+
+        for i in range(0, agrupado.__len__()):
+            json = {
+                    "name" : "Cluster " + str(i),
+                    "data" : [agrupado.get(i)]
+            }
+            series.append(json)
+
+        guardardatosreporte("Total por cluster", series, "2.3", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -632,8 +652,6 @@ def clustersgaussianmixture(idmodelo, x, parametros):
     # Reducción de dimensionalidad antes de K-means
     pca = PCA(n_components=2)
     pca_ansiedad = pca.fit_transform(ansiedad)
-
-    print(pca_ansiedad.shape)
 
     # Aplicar GMM
     modelo = GaussianMixture(**parametros).fit(pca_ansiedad)
