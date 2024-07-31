@@ -590,14 +590,9 @@ def clusterskmeans(idmodelo, x, parametros):
             }
             series.append(json)
 
-        clusters = []
-
-        for modelo in modelo.cluster_centers_:
-            clusters.append(modelo)
-
         json = {
                 "name" : "Centros Clusters",
-                "data" : clusters
+                "data" : [sub_arreglo.tolist() for sub_arreglo in modelo.cluster_centers_]
         }
 
         series.append(json)
@@ -638,8 +633,11 @@ def clustersgaussianmixture(idmodelo, x, parametros):
     pca = PCA(n_components=2)
     pca_ansiedad = pca.fit_transform(ansiedad)
 
+    print(pca_ansiedad.shape)
+
     # Aplicar GMM
     modelo = GaussianMixture(**parametros).fit(pca_ansiedad)
+    centros =  modelo.means_
 
     # Grafica los resultados
     ansiedad_pca = pd.DataFrame(pca_ansiedad, columns=['pca_one', 'pca_two'])
@@ -653,29 +651,18 @@ def clustersgaussianmixture(idmodelo, x, parametros):
 
     for nombre, grupo in agrupados:
         cluster_points = grupo[['pca_one', 'pca_two']].values.tolist()
-        series.append(
-            {
-                "name" : "Cluster " + str(nombre),
-                "data" : str(cluster_points)
-            }
-        )
-
-    clusters = []
-
-    means = modelo.means_
-
-    print(means)
-
-    for modelo in modelo.means_:
-        print("")
-        # clusters.append(modelo)    
-
-    series.append(
-        {
-            "name" : "Centros Clusters",
-            "data" : str(clusters).replace("array(", "").replace(")", "")
+        json = {
+            "name" : "Cluster " + str(nombre),
+            "data" : cluster_points
         }
-    )
+        series.append(json)
+
+    json = {
+        "name" : "Centros Clusters",
+        "data" : [sub_arreglo.tolist() for sub_arreglo in centros]
+    }
+
+    series.append(json)
 
     guardardatosreporte("Gráfico de dispersión con clusters", series, "2.1", idmodelo)
 
