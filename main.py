@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import ast
 import csv
+import numpy as np
 from flask import Flask, jsonify, request, render_template, make_response, send_file
 from flask_cors import CORS
 from supabase import create_client, Client
@@ -480,9 +481,12 @@ def getdatosmodelo():
             return jsonify({"error": "No se encontro el modelo"}), 400
 
         # Establecer atributo principal de resto de modelos como false
-        datos = supabase.table("datos").select("*").eq("id_modelo", idmodelo).execute().data
+        datos_db = supabase.table("datos").select("*").eq("id_modelo", idmodelo).execute().data
 
-        return jsonify({"mensaje": "Modelo consultado correctamente", "datos" : datos }), 200
+        for dato in datos_db:
+            dato["valor"] = eval(dato.get("valor"))
+
+        return jsonify({"mensaje": "Modelo consultado correctamente", "datos" : datos_db }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
@@ -580,24 +584,23 @@ def clusterskmeans(idmodelo, x, parametros):
 
         for nombre, grupo in agrupados:
             cluster_points = grupo[['pca_one', 'pca_two']].values.tolist()
-            series.append(
-                {
+            json = {
                     "name" : "Cluster " + str(nombre),
-                    "data" : str(cluster_points)
-                }
-            )
+                    "data" : cluster_points
+            }
+            series.append(json)
 
         clusters = []
 
         for modelo in modelo.cluster_centers_:
             clusters.append(modelo)
 
-        series.append(
-            {
+        json = {
                 "name" : "Centros Clusters",
-                "data" : str(clusters).replace("array(", "").replace(")", "")
-            }
-        )
+                "data" : clusters
+        }
+
+        series.append(json)
 
         guardardatosreporte("Gráfico clusters Kmeans", series, "2.1", idmodelo)
     except Exception as e:
