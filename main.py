@@ -465,6 +465,27 @@ def columnasmodelo():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
+# * Obtener columnas modelo
+@app.route('/modelos/datos', methods=["POST"])
+def getdatosmodelo():
+    try:
+        body = request.get_json()
+
+        if body is None or body == {}:
+            return jsonify({"error": "No se encontraron valores para realizar la operación"}), 400
+        
+        idmodelo = body.get("id")
+
+        if idmodelo is None or idmodelo == "":
+            return jsonify({"error": "No se encontro el modelo"}), 400
+
+        # Establecer atributo principal de resto de modelos como false
+        datos = supabase.table("datos").select("*").eq("id_modelo", idmodelo).eq("nombre", "Columnas Dataset").execute().data[0]
+
+        return jsonify({"mensaje": "Modelo consultado correctamente", "datos" : datos }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
 # * Guardar datos para reporte pdf
 def columnasdataset(idmodelo, columnas):
     try:
@@ -516,21 +537,21 @@ def datospuntuaciones(idmodelo, modelo, x, tipo):
 def metodocodokmeans(idmodelo, data):
     try:
         # Gráfico de Elbow
-        distortions = []
+        x_axis = []
+        y_axis = []
+        coords = []
+
         K = range(1, 11)
-        for k in K:
+        for k in K:            
             kmeans = KMeans(n_clusters=k)
             kmeans.fit(data)
-            distortions.append(kmeans.inertia_)
-            
-        plt.figure(figsize=(8, 6))
-        plt.plot(K, distortions, 'bo-')
-        plt.xlabel('Número de clusters (K)')
-        plt.ylabel('Inercia')
-        plt.title('Gráfico de Elbow')
+            x_axis.append(k)
+            y_axis.append(kmeans.inertia_)
 
-        guardardatosreporte("Método del Codo Kmeans", plt, "2", idmodelo)
-        plt.close("all")
+        coords.append(x_axis)
+        coords.append(y_axis)
+
+        guardardatosreporte("Método del Codo Kmeans", coords, "2", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -551,24 +572,34 @@ def clusterskmeans(idmodelo, x, parametros):
         ansiedad_pca = pd.DataFrame(pca_ansiedad, columns=['pca_one', 'pca_two'])
         ansiedad_pca['cluster'] = modelo.labels_
 
-        plt.figure(figsize=(6, 5), dpi=100)
-        colores = ["red", "blue", "green", "black", "purple", "pink"]
+        # Agrupar datos por cluster
+        agrupados = ansiedad_pca.groupby('cluster')
 
-        for cluster in range(4):
-            plt.scatter(ansiedad_pca.loc[ansiedad_pca["cluster"] == cluster, "pca_one"],
-                        ansiedad_pca.loc[ansiedad_pca["cluster"] == cluster, "pca_two"],
-                        s=50, c=colores[cluster], label=f"Cluster {cluster}")
-            plt.scatter(modelo.cluster_centers_[cluster, 0],
-                        modelo.cluster_centers_[cluster, 1],
-                        marker="X", s=200, c="orange")
+        # Guardar datos para gráficas
+        series = []
 
-        plt.title("Visualización de Clústeres utilizando PCA")
-        plt.xlabel("PCA Componente 1")
-        plt.ylabel("PCA Componente 2")
-        plt.legend()
+        for nombre, grupo in agrupados:
+            cluster_points = grupo[['pca_one', 'pca_two']].values.tolist()
+            series.append(
+                {
+                    "name" : "Cluster " + str(nombre),
+                    "data" : str(cluster_points)
+                }
+            )
 
-        guardardatosreporte("Clusters Kmeans", plt, "2", idmodelo)
-        plt.close("all")
+        clusters = []
+
+        for modelo in modelo.cluster_centers_:
+            clusters.append(modelo)
+
+        series.append(
+            {
+                "name" : "Centros Clusters",
+                "data" : str(clusters).replace("array(", "").replace(")", "")
+            }
+        )
+
+        guardardatosreporte("Clusters Kmeans", series, "2", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
@@ -601,8 +632,6 @@ def clustersgaussianmixture(idmodelo, x, parametros):
 
     # Reducción de dimensionalidad antes de K-means
     pca = PCA(n_components=2)
-    pca_ansiedad = pca.fit_transform(ansiedad)
-    print(pca_ansiedad.shape)
 
     # Aplicar K-means
     modelo = GaussianMixture(**parametros).fit(pca_ansiedad)
@@ -615,7 +644,6 @@ def clustersgaussianmixture(idmodelo, x, parametros):
 
     # Gráfico de dispersión con clusters
     plt.figure(figsize=(8, 6))
-    print(pca_ansiedad.shape)
     scatter = plt.scatter(pca_ansiedad[:, 0], pca_ansiedad[:, 1], c=labels, s=50, cmap='viridis', alpha=0.7)
     plt.scatter(means[:, 0], means[:, 1], s=300, c='red', marker='X', label='Medias')
     plt.legend()
@@ -639,14 +667,7 @@ def guardardatosreporte(nombre, dato, tipo, idmodelo):
         if idmodelo is None or idmodelo == "":
             return jsonify({"error": "No se establecio un idmodelo"}), 400
 
-        if tipo == "1": # Gráficas
-            valor = str(dato)
-        elif tipo == "2": # Texto
-            buffer = BytesIO()
-            dato.savefig(buffer, format='png')
-            buffer.seek(0)
-            valor = base64.b64encode(buffer.read()).decode('utf-8')
-            buffer.close()            
+        valor = str(dato)
 
         data = {
             "nombre" : nombre,
