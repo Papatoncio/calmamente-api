@@ -480,7 +480,7 @@ def getdatosmodelo():
             return jsonify({"error": "No se encontro el modelo"}), 400
 
         # Establecer atributo principal de resto de modelos como false
-        datos = supabase.table("datos").select("*").eq("id_modelo", idmodelo).eq("nombre", "Columnas Dataset").execute().data[0]
+        datos = supabase.table("datos").select("*").eq("id_modelo", idmodelo).execute().data
 
         return jsonify({"mensaje": "Modelo consultado correctamente", "datos" : datos }), 200
     except Exception as e:
@@ -607,21 +607,22 @@ def clusterskmeans(idmodelo, x, parametros):
 def metodocodogaussianmixture(idmodelo, data):
     try:
         # Gráfico de Elbow
+        x_axis = []
+        y_axis = []
+        coords = []
+
+        # Gráfico de Elbow
         n_components_range = range(1, 11)
-        bics = []
         for n in n_components_range:
             gmm = GaussianMixture(n_components=n)
             gmm.fit(data)
-            bics.append(gmm.bic(data))
-            
-        plt.figure(figsize=(8, 6))
-        plt.plot(n_components_range, bics, 'bo-')
-        plt.xlabel('Número de componentes')
-        plt.ylabel('BIC')
-        plt.title('Gráfico de Elbow para el GMM')
+            x_axis.append(n)
+            y_axis.append(gmm.bic(data))
 
-        guardardatosreporte("Método del Codo GaussianMixture", plt, "2", idmodelo)
-        plt.close("all")
+        coords.append(x_axis)
+        coords.append(y_axis)
+
+        guardardatosreporte("Método del Codo GaussianMixture", coords, "2", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -632,26 +633,48 @@ def clustersgaussianmixture(idmodelo, x, parametros):
 
     # Reducción de dimensionalidad antes de K-means
     pca = PCA(n_components=2)
+    pca_ansiedad = pca.fit_transform(ansiedad)
 
-    # Aplicar K-means
+    # Aplicar GMM
     modelo = GaussianMixture(**parametros).fit(pca_ansiedad)
 
-    # Medias de las gaussianas
+    # Grafica los resultados
+    ansiedad_pca = pd.DataFrame(pca_ansiedad, columns=['pca_one', 'pca_two'])
+    ansiedad_pca['cluster'] = modelo.fit_predict(x)
+
+    # Agrupar datos por cluster
+    agrupados = ansiedad_pca.groupby('cluster')
+
+    # Guardar datos para gráficas
+    series = []
+
+    for nombre, grupo in agrupados:
+        cluster_points = grupo[['pca_one', 'pca_two']].values.tolist()
+        series.append(
+            {
+                "name" : "Cluster " + str(nombre),
+                "data" : str(cluster_points)
+            }
+        )
+
+    clusters = []
+
     means = modelo.means_
 
-    # Etiquetas de los clusters
-    labels = modelo.predict(pca_ansiedad)
+    print(means)
 
-    # Gráfico de dispersión con clusters
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(pca_ansiedad[:, 0], pca_ansiedad[:, 1], c=labels, s=50, cmap='viridis', alpha=0.7)
-    plt.scatter(means[:, 0], means[:, 1], s=300, c='red', marker='X', label='Medias')
-    plt.legend()
-    plt.title('Gráfico de Dispersión con Clusters')
-    plt.colorbar(scatter, label='Cluster')
+    for modelo in modelo.means_:
+        print("")
+        # clusters.append(modelo)    
 
-    guardardatosreporte("Gráfico de dispersión con clusters", plt, "2", idmodelo)
-    plt.close("all")
+    series.append(
+        {
+            "name" : "Centros Clusters",
+            "data" : str(clusters).replace("array(", "").replace(")", "")
+        }
+    )
+
+    guardardatosreporte("Gráfico de dispersión con clusters", series, "2", idmodelo)
 
 def guardardatosreporte(nombre, dato, tipo, idmodelo):
     try:        
