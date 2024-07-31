@@ -551,7 +551,7 @@ def metodocodokmeans(idmodelo, data):
         coords.append(x_axis)
         coords.append(y_axis)
 
-        guardardatosreporte("Método del Codo Kmeans", coords, "2", idmodelo)
+        guardardatosreporte("Método del Codo Kmeans", coords, "2.2", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -599,7 +599,7 @@ def clusterskmeans(idmodelo, x, parametros):
             }
         )
 
-        guardardatosreporte("Clusters Kmeans", series, "2", idmodelo)
+        guardardatosreporte("Gráfico clusters Kmeans", series, "2.1", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     
@@ -622,7 +622,7 @@ def metodocodogaussianmixture(idmodelo, data):
         coords.append(x_axis)
         coords.append(y_axis)
 
-        guardardatosreporte("Método del Codo GaussianMixture", coords, "2", idmodelo)
+        guardardatosreporte("Método del Codo GaussianMixture", coords, "2.2", idmodelo)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -674,7 +674,7 @@ def clustersgaussianmixture(idmodelo, x, parametros):
         }
     )
 
-    guardardatosreporte("Gráfico de dispersión con clusters", series, "2", idmodelo)
+    guardardatosreporte("Gráfico de dispersión con clusters", series, "2.1", idmodelo)
 
 def guardardatosreporte(nombre, dato, tipo, idmodelo):
     try:        
