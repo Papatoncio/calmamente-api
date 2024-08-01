@@ -747,4 +747,4 @@ if __name__ == "__main__":
     with app.app_context():
         # Cargar modelo principal si hay
         cargarmodelo()
-    app.run(debug=DEBUG, port=PORT)
+    app.run(debug=DEBUG, port=PORT, host='0.0.0.0')
